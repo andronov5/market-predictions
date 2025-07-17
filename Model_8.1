@@ -17,20 +17,29 @@ You can now eyeball the hyper‑param landscape before deciding which model to t
 """
 
 import datetime as dt
+import json
+import os
 from pathlib import Path
+from typing import List
 
+import backoff
+import gspread
+from google.auth import default as gauth_default
+import joblib
+import lightgbm as lgbm
+import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
+import ta
+import vectorbt as vbt
+import xgboost as xgb
 import yfinance as yf
 from joblib import Parallel, delayed
-import ta
-from ta.volatility import BollingerBands
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.metrics import precision_score, make_scorer
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-import xgboost as xgb
-import lightgbm as lgbm
-import optuna
+from ta.volatility import BollingerBands
 
 # ───────────── CONFIG ─────────────
 CACHE_FILE = Path("prices_5y.parquet")
@@ -89,13 +98,18 @@ def compute_features(df, market):
     df["MFI"] = ta.volume.money_flow_index(df["High"], df["Low"], df["Close"], df["Volume"], 14)
     df["ATR"] = ta.volatility.average_true_range(df["High"], df["Low"], df["Close"], 14)
     bb = BollingerBands(df["Close"], 20, 2)
-    df["BOLL_HBAND"] = bb.bollinger_hband(); df["BOLL_LBAND"] = bb.bollinger_lband(); df["BOLL_WIDTH"] = (df["BOLL_HBAND"]-df["BOLL_LBAND"])/df["Close"]
+    df["BOLL_HBAND"] = bb.bollinger_hband()
+    df["BOLL_LBAND"] = bb.bollinger_lband()
+    df["BOLL_WIDTH"] = (df["BOLL_HBAND"] - df["BOLL_LBAND"]) / df["Close"]
     for w in (1,5,10,20):
         df[f"Return_{w}d"] = df["Close"].pct_change(w)
-    df["Volatility_10d"] = df["Close"].pct_change().rolling(10).std(); df["Volatility_20d"] = df["Close"].pct_change().rolling(20).std()
-    spy = market["SPY"].reindex(df.index).ffill(); vix = market["^VIX"].reindex(df.index).ffill()
+    df["Volatility_10d"] = df["Close"].pct_change().rolling(10).std()
+    df["Volatility_20d"] = df["Close"].pct_change().rolling(20).std()
+    spy = market["SPY"].reindex(df.index).ffill()
+    vix = market["^VIX"].reindex(df.index).ffill()
     df["SPY_Trend"] = (spy > spy.rolling(20).mean()).astype(int)
-    df["VIX_Level"] = vix; df["VIX_Change"] = vix.pct_change(5)
+    df["VIX_Level"] = vix
+    df["VIX_Change"] = vix.pct_change(5)
     df["RS_Market"] = (df["Close"] / df["Close"].shift(20)) / (spy / spy.shift(20))
     return df.dropna()
 
@@ -221,15 +235,6 @@ pip install vectorbt pandas numpy matplotlib joblib plotly kaleido
 Vectorbt uses Numba under‑the‑hood; if you have a CUDA GPU and numba‑cuda, it will JIT on GPU.
 """
 
-import json
-from pathlib import Path
-
-import joblib
-import numpy as np
-import pandas as pd
-import vectorbt as vbt
-import matplotlib.pyplot as plt
-
 ARTEFACT_FILE = Path("ml_pipeline.joblib")  # created by kernel 1
 INIT_CASH = 100_000
 MAX_POS_PCT = 0.10          # 10 % of NAV per trade
@@ -325,16 +330,6 @@ pip install gspread google-auth google-auth-httplib2 backoff
 • Ensure the service account e‑mail has edit rights to the target sheet.
 • Set env var GOOGLE_APPLICATION_CREDENTIALS=/full/path/creds.json.
 """
-
-import os
-import json
-import datetime as dt
-from pathlib import Path
-from typing import List
-
-import backoff
-import gspread
-from google.auth import default as gauth_default
 
 SPREADSHEET_NAME = "TradingLog"        # Google Sheets file name
 EQUITY_SHEET = "Equity Tracker"        # tab name for equity curve
