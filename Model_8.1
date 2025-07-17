@@ -372,6 +372,11 @@ def _append_rows(ws, rows: List[list]):
 # ─────────────────────── EQUITY TRACKER ─────────────────────
 
 def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
+    """Append equity data from ``json_path`` to the Equity Tracker sheet.
+
+    ``json_path`` should point to a JSON file containing the list of
+    daily portfolio equity values.
+    """
     if not json_path.exists():
         raise FileNotFoundError(json_path)
 
