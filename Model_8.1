@@ -74,9 +74,6 @@ def download_or_load_prices(tickers):
     return df
 
 # ───────── feature engineering ─────────
-ALL_TICKERS = TICKERS + ["SPY", "^VIX"]
-prices = download_or_load_prices(ALL_TICKERS)
-
 
 def compute_features(df, market):
     df = df.dropna(subset=["Close","High","Low","Open","Volume"]).copy()
@@ -102,80 +99,110 @@ def compute_features(df, market):
     df["RS_Market"] = (df["Close"] / df["Close"].shift(20)) / (spy / spy.shift(20))
     return df.dropna()
 
-price_dict = {tkr: grp.droplevel("Ticker") for tkr, grp in prices.groupby(level="Ticker") if tkr in ALL_TICKERS}
-market_dict = {k: price_dict[k]["Close"] for k in ["SPY", "^VIX"]}
+def data_prep_and_feature_engineering():
+    """Download prices, compute features and return selected training data."""
+    ALL_TICKERS = TICKERS + ["SPY", "^VIX"]
+    prices = download_or_load_prices(ALL_TICKERS)
 
-print("⚙️  Computing features …")
-feat_list = Parallel(n_jobs=N_JOBS)(delayed(compute_features)(price_dict[tkr], market_dict) for tkr in TICKERS)
-all_data = pd.concat(feat_list, keys=TICKERS)
-all_data.index.names = ["Date", "Symbol"]
+    price_dict = {
+        tkr: grp.droplevel("Ticker")
+        for tkr, grp in prices.groupby(level="Ticker")
+        if tkr in ALL_TICKERS
+    }
+    market_dict = {k: price_dict[k]["Close"] for k in ["SPY", "^VIX"]}
 
-# ───────── split train / test ─────────
-cut = int(len(all_data)*0.85)
-train_df = all_data.iloc[:cut]
-X_train, y_train = train_df[FEATURES], train_df["Target"]
+    print("⚙️  Computing features …")
+    feat_list = Parallel(n_jobs=N_JOBS)(
+        delayed(compute_features)(price_dict[tkr], market_dict) for tkr in TICKERS
+    )
+    all_data = pd.concat(feat_list, keys=TICKERS)
+    all_data.index.names = ["Date", "Symbol"]
 
-# ───────── feature selection ─────────
-print("🔍  Feature selection via RandomForest …")
-rf_sel = RandomForestClassifier(n_estimators=200, n_jobs=-1, random_state=42).fit(X_train, y_train)
-imp = pd.Series(rf_sel.feature_importances_, index=FEATURES).sort_values(ascending=False)
-selected_features = imp.loc[(imp.cumsum()/imp.sum())<=0.8].index.tolist()
-print(f"Selected {len(selected_features)} features → {selected_features}\n")
+    # ───────── split train / test ─────────
+    cut = int(len(all_data) * 0.85)
+    train_df = all_data.iloc[:cut]
+    X_train, y_train = train_df[FEATURES], train_df["Target"]
 
-X_train_sel = X_train[selected_features]
+    # ───────── feature selection ─────────
+    print("🔍  Feature selection via RandomForest …")
+    rf_sel = RandomForestClassifier(n_estimators=200, n_jobs=-1, random_state=42).fit(
+        X_train, y_train
+    )
+    imp = pd.Series(rf_sel.feature_importances_, index=FEATURES).sort_values(
+        ascending=False
+    )
+    selected_features = imp.loc[(imp.cumsum() / imp.sum()) <= 0.8].index.tolist()
+    print(f"Selected {len(selected_features)} features → {selected_features}\n")
+
+    X_train_sel = X_train[selected_features]
+    return X_train_sel, y_train
 
 # ───────── Bayesian GRID SEARCH (Optuna) ─────────
-precision = make_scorer(precision_score, pos_label=1, zero_division=0)
-cv = TimeSeriesSplit(n_splits=5)
 
-def objective(trial):
-    """Objective: optimise ensemble; auto‑fallback to CPU if GPU not available."""
-    rf = RandomForestClassifier(
-        n_estimators=trial.suggest_int("n", 100, 500, 100),
-        max_depth=trial.suggest_int("d", 5, 20),
-        min_samples_leaf=trial.suggest_int("leaf", 1, 4),
-        class_weight="balanced", n_jobs=-1, random_state=42)
+def run_grid_search(X_train_sel, y_train):
+    """Run Optuna Bayesian search and print results."""
+    precision = make_scorer(precision_score, pos_label=1, zero_division=0)
+    cv = TimeSeriesSplit(n_splits=5)
 
-    # ------- XGB CPU/GPU fallback -------
-    try:
-        xgbc = xgb.XGBClassifier(
-            tree_method="gpu_hist", gpu_id=0,
-            max_depth=6, n_estimators=200, learning_rate=0.08,
-            random_state=42, eval_metric="logloss")
-        xgbc.fit(np.zeros((1, X_train_sel.shape[1])), np.array([0]))  # quick test
-    except xgb.core.XGBoostError:
-        xgbc = xgb.XGBClassifier(
-            tree_method="hist", max_depth=6, n_estimators=200, learning_rate=0.08,
-            random_state=42, eval_metric="logloss")
+    def objective(trial):
+        rf = RandomForestClassifier(
+            n_estimators=trial.suggest_int("n", 100, 500, 100),
+            max_depth=trial.suggest_int("d", 5, 20),
+            min_samples_leaf=trial.suggest_int("leaf", 1, 4),
+            class_weight="balanced",
+            n_jobs=-1,
+            random_state=42,
+        )
 
-    # ------- LightGBM CPU/GPU fallback -------
-    try:
-        lgbc = lgbm.LGBMClassifier(device_type="gpu", n_estimators=200, random_state=42)
-        lgbc.fit(np.zeros((10, X_train_sel.shape[1])), np.zeros(10))
-    except Exception:
-        lgbc = lgbm.LGBMClassifier(device_type="cpu", n_estimators=200, random_state=42)
+        # ------- XGB CPU/GPU fallback -------
+        try:
+            xgbc = xgb.XGBClassifier(
+                tree_method="gpu_hist",
+                gpu_id=0,
+                max_depth=6,
+                n_estimators=200,
+                learning_rate=0.08,
+                random_state=42,
+                eval_metric="logloss",
+            )
+            xgbc.fit(np.zeros((1, X_train_sel.shape[1])), np.array([0]))
+        except xgb.core.XGBoostError:
+            xgbc = xgb.XGBClassifier(
+                tree_method="hist",
+                max_depth=6,
+                n_estimators=200,
+                learning_rate=0.08,
+                random_state=42,
+                eval_metric="logloss",
+            )
 
-    vote = VotingClassifier([("rf", rf), ("xgb", xgbc), ("lgb", lgbc)], voting="soft", n_jobs=-1)
-    try:
-        score = cross_val_score(vote, X_train_sel, y_train, cv=cv, scoring=precision, n_jobs=-1).mean()
-    except Exception as e:
-        # if one model fails, return poorly so Optuna drops it
-        print(f"Trial failed due to {e}; returning 0")
-        score = 0.0
-    return score
+        # ------- LightGBM CPU/GPU fallback -------
+        try:
+            lgbc = lgbm.LGBMClassifier(device_type="gpu", n_estimators=200, random_state=42)
+            lgbc.fit(np.zeros((10, X_train_sel.shape[1])), np.zeros(10))
+        except Exception:
+            lgbc = lgbm.LGBMClassifier(device_type="cpu", n_estimators=200, random_state=42)
 
-print("⏳  Running Optuna grid search (10 trials, CPU/GPU‑safe) …")
-study = optuna.create_study(direction="maximize")
-study.optimize(objective, n_trials=10, timeout=600)
+        vote = VotingClassifier([("rf", rf), ("xgb", xgbc), ("lgb", lgbc)], voting="soft", n_jobs=-1)
+        try:
+            score = cross_val_score(vote, X_train_sel, y_train, cv=cv, scoring=precision, n_jobs=-1).mean()
+        except Exception as e:
+            print(f"Trial failed due to {e}; returning 0")
+            score = 0.0
+        return score
 
-# ───────── print full trial table ─────────
-results = study.trials_dataframe().sort_values("value", ascending=False)
-print("\n===== GridSearch Results (sorted by precision) =====")
-print(results[["value"] + [c for c in results.columns if c.startswith("params_")]].to_string(index=False))
+    print("⏳  Running Optuna grid search (10 trials, CPU/GPU‑safe) …")
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=10, timeout=600)
 
-# optional: save for later exploration
-results.to_parquet("grid_search_results.parquet", index=False)
-print("\nGrid search completed. Results saved to grid_search_results.parquet")
+    results = study.trials_dataframe().sort_values("value", ascending=False)
+    print("\n===== GridSearch Results (sorted by precision) =====")
+    print(
+        results[["value"] + [c for c in results.columns if c.startswith("params_")]].to_string(index=False)
+    )
+
+    results.to_parquet("grid_search_results.parquet", index=False)
+    print("\nGrid search completed. Results saved to grid_search_results.parquet")
 
 # OPTIMIZED KERNEL 2  — Vectorised, GPU‑friendly Backtest & Equity Tracker
 """
@@ -211,81 +238,70 @@ TRAIL_PCT = 0.03            # trailing stop (only when in profit)
 TAKE_PROFIT_PCT = 0.08      # target
 MAX_CONCURRENT = 5
 
-# ───────────────────────── LOAD DATA ──────────────────────────
-print("📂  Loading artefacts …")
-art = joblib.load(ARTEFACT_FILE)
-df_bt = art["bt_data"]  # dataframe with Date, Symbol, Open, High, Low, Close, Volume, Predicted, Probability
 
-df_bt["Date"] = pd.to_datetime(df_bt["Date"])
-df_bt.set_index("Date", inplace=True)
+def run_backtest():
+    """Run the vectorbt backtest and export results."""
+    print("📂  Loading artefacts …")
+    art = joblib.load(ARTEFACT_FILE)
+    df_bt = art["bt_data"]
 
-symbols = df_bt["Symbol"].unique().tolist()
+    df_bt["Date"] = pd.to_datetime(df_bt["Date"])
+    df_bt.set_index("Date", inplace=True)
 
-# ───────────────────────── RESHAPE WIDE ───────────────────────
-print("🧮  Reshaping …")
-price_close = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Close").ffill()
-entries_raw = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Predicted").fillna(0).astype(bool)
-probs = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Probability").fillna(0.0)
+    price_close = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Close").ffill()
+    entries_raw = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Predicted").fillna(0).astype(bool)
+    probs = df_bt.pivot_table(index=df_bt.index, columns="Symbol", values="Probability").fillna(0.0)
 
-# Size per asset → scale by confidence (0.5‑1 ⇒ 0‑1)
-conf = ((probs - 0.5).clip(lower=0) / 0.5).rolling(1).mean()  # same shape
-size_pct = MAX_POS_PCT * (0.5 + 0.5 * conf)  # 50‑100 % of max_pos_pct
+    conf = ((probs - 0.5).clip(lower=0) / 0.5).rolling(1).mean()
+    size_pct = MAX_POS_PCT * (0.5 + 0.5 * conf)
 
-# Simple exit: fixed 10‑bar timeout to replicate hold_days ≈5‑10
-exit_after = 10
-exit_timeout = entries_raw.shift(exit_after).fillna(False)
+    exit_after = 10
+    exit_timeout = entries_raw.shift(exit_after).fillna(False)
 
-# Stop & trailing masks generated by vectorbt built‑ins
-# generate exits based on SL/TP/TS
-exits_sl,exits_tp = vbt.tsignals.generate_sl_tp(price_close, entries_raw, stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT)
-exits_trail = vbt.tsignals.generate_trailing(price_close, entries_raw, trail_percent=TRAIL_PCT)
+    exits_sl, exits_tp = vbt.tsignals.generate_sl_tp(
+        price_close, entries_raw, stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT
+    )
+    exits_trail = vbt.tsignals.generate_trailing(price_close, entries_raw, trail_percent=TRAIL_PCT)
+    exits_combined = exits_sl | exits_tp | exits_trail | exit_timeout
 
-# combine all exit conditions
-exits_combined = exits_sl | exits_tp | exits_trail | exit_timeout
+    print("🚀  Running vectorbt portfolio …")
+    pf = vbt.Portfolio.from_signals(
+        price_close,
+        entries_raw,
+        exits_combined,
+        size=size_pct * INIT_CASH,
+        init_cash=INIT_CASH,
+        freq="1D",
+        max_orders=MAX_CONCURRENT,
+    )
 
-# ───────────────────────── PORTFOLIO RUN ─────────────────────
-print("🚀  Running vectorbt portfolio …")
-pf = vbt.Portfolio.from_signals(
-    price_close,
-    entries_raw,
-    exits_combined,
-    size=size_pct * INIT_CASH,         # dynamic position size in dollars
-    init_cash=INIT_CASH,
-    freq="1D",
-    max_orders=MAX_CONCURRENT,
-)
+    print("✅  Done.   Final NAV = ${:,.2f}".format(pf.final_value()))
+    print("Sharpe Ratio : {:.2f}".format(pf.sharpe_ratio()))
+    print("Max Drawdown : {:.2%}".format(pf.max_drawdown()))
+    print("Total Trades : {}".format(pf.trades.count()))
+    print("Win Rate     : {:.2%}".format(pf.trades.win_rate()))
 
-print("✅  Done.   Final NAV = ${:,.2f}".format(pf.final_value()))
+    port_vals = pf.value()
+    with open("portfolio_values.json", "w") as f:
+        json.dump(port_vals.round(2).to_list(), f)
 
-# ───────────────────────── METRICS ───────────────────────────
-print("Sharpe Ratio : {:.2f}".format(pf.sharpe_ratio()))
-print("Max Drawdown : {:.2%}".format(pf.max_drawdown()))
-print("Total Trades : {}".format(pf.trades.count()))
-print("Win Rate     : {:.2%}".format(pf.trades.win_rate()))
+    plt.figure(figsize=(12, 7))
+    plt.subplot(2, 1, 1)
+    plt.plot(port_vals.index, port_vals.values, label="Equity")
+    plt.title("Equity Curve")
+    plt.grid(True)
+    plt.legend()
 
-# ───────────────────────── EXPORTS ───────────────────────────
-port_vals = pf.value()
-with open("portfolio_values.json", "w") as f:
-    json.dump(port_vals.round(2).to_list(), f)
+    plt.subplot(2, 1, 2)
+    max_curve = port_vals.cummax()
+    plt.fill_between(port_vals.index, 0, (port_vals / max_curve - 1).values, color="red", alpha=0.3)
+    plt.title("Drawdown")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("backtest_results.png", dpi=150)
+    plt.close()
 
-# Plot equity & drawdowns
-plt.figure(figsize=(12, 7))
-plt.subplot(2, 1, 1)
-plt.plot(port_vals.index, port_vals.values, label="Equity")
-plt.title("Equity Curve")
-plt.grid(True)
-plt.legend()
-
-plt.subplot(2, 1, 2)
-max_curve = port_vals.cummax()
-plt.fill_between(port_vals.index, 0, (port_vals / max_curve - 1).values, color="red", alpha=0.3)
-plt.title("Drawdown")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig("backtest_results.png", dpi=150)
-plt.close()
-
-print("📊  Outputs: portfolio_values.json  +  backtest_results.png")
+    print("📊  Outputs: portfolio_values.json  +  backtest_results.png")
 
 # OPTIMIZED KERNEL 3  — Trading Log / Equity Tracker ⟷ Google Sheets
 """
@@ -396,6 +412,13 @@ def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
         print("ℹ Equity sheet already up‑to‑date.")
 
 # ───────────────────── MAIN (CLI) ────────────────────────────
-if __name__ == "__main__":
+def main():
+    X_train_sel, y_train = data_prep_and_feature_engineering()
+    run_grid_search(X_train_sel, y_train)
+    run_backtest()
     update_equity_tracker()
+
+
+if __name__ == "__main__":
+    main()
     # To log trades, write a similar function append_trades(trade_df)
