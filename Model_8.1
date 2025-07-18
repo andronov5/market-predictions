@@ -345,16 +345,19 @@ def get_gs_client():
     ])
     return gspread.authorize(creds)
 
-CLIENT = get_gs_client()
-SHEET = CLIENT.open(SPREADSHEET_NAME)
+
+def get_sheet():
+    """Return the Google Sheet without opening it at import time."""
+    client = get_gs_client()
+    return client.open(SPREADSHEET_NAME)
 
 # ─────────────────────── HELPERS ─────────────────────────────
 
-def _ensure_worksheet(title: str, cols: int = 3):
+def _ensure_worksheet(sheet, title: str, cols: int = 3):
     try:
-        return SHEET.worksheet(title)
+        return sheet.worksheet(title)
     except gspread.WorksheetNotFound:
-        return SHEET.add_worksheet(title, rows="100", cols=str(cols))
+        return sheet.add_worksheet(title, rows="100", cols=str(cols))
 
 
 def _last_row(ws):
@@ -383,7 +386,8 @@ def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
     with open(json_path) as f:
         values = json.load(f)  # list[float]
 
-    ws = _ensure_worksheet(EQUITY_SHEET)
+    sheet = get_sheet()
+    ws = _ensure_worksheet(sheet, EQUITY_SHEET)
     start_idx = _last_row(ws)
 
     header = ["Date", "Equity", "Daily PnL", "Cum PnL"]
