@@ -16,6 +16,7 @@ Run‑time flow
 You can now eyeball the hyper‑param landscape before deciding which model to train.
 """
 
+import argparse
 import datetime as dt
 import json
 import os
@@ -57,6 +58,45 @@ FEATURES = [
     "Volatility_10d","Volatility_20d","SPY_Trend","VIX_Level","VIX_Change","RS_Market"
 ]
 N_JOBS = -1
+
+# ──────────── ARGPARSE ────────────
+def parse_args():
+    """Parse CLI arguments."""
+    parser = argparse.ArgumentParser(description="Run Model 8.1 pipeline steps")
+    parser.add_argument(
+        "--tickers",
+        type=str,
+        default=",".join(TICKERS),
+        help="Comma separated list of tickers",
+    )
+    parser.add_argument(
+        "--start",
+        type=lambda s: dt.datetime.strptime(s, "%Y-%m-%d").date(),
+        default=START_DATE,
+        help="Start date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end",
+        type=lambda s: dt.datetime.strptime(s, "%Y-%m-%d").date(),
+        default=END_DATE,
+        help="End date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--grid-search",
+        action="store_true",
+        help="Run the Optuna grid search step",
+    )
+    parser.add_argument(
+        "--backtest",
+        action="store_true",
+        help="Run the vectorbt backtest step",
+    )
+    parser.add_argument(
+        "--update-sheets",
+        action="store_true",
+        help="Update Google Sheets with portfolio values",
+    )
+    return parser.parse_args()
 
 # ───────── data cache helper ─────────
 
@@ -417,10 +457,25 @@ def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
 
 # ───────────────────── MAIN (CLI) ────────────────────────────
 def main():
-    X_train_sel, y_train = data_prep_and_feature_engineering()
-    run_grid_search(X_train_sel, y_train)
-    run_backtest()
-    update_equity_tracker()
+    args = parse_args()
+
+    global TICKERS, START_DATE, END_DATE, YEARS
+    TICKERS = [t.strip() for t in args.tickers.split(',') if t.strip()]
+    START_DATE = args.start
+    END_DATE = args.end
+    YEARS = (END_DATE - START_DATE).days // 365
+
+    run_all = not (args.grid_search or args.backtest or args.update_sheets)
+
+    if args.grid_search or run_all:
+        X_train_sel, y_train = data_prep_and_feature_engineering()
+        run_grid_search(X_train_sel, y_train)
+
+    if args.backtest or run_all:
+        run_backtest()
+
+    if args.update_sheets or run_all:
+        update_equity_tracker()
 
 
 if __name__ == "__main__":

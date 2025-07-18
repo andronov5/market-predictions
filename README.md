@@ -24,6 +24,14 @@ Run the full pipeline with:
 python Model_8.1
 ```
 
+You can also run individual steps using command line flags. Example:
+
+```bash
+python Model_8.1 --grid-search --backtest --tickers AAPL,MSFT --start 2020-01-01 --end 2023-01-01
+```
+
+If no step flags are provided, all steps run by default.
+
 The script will:
 
 1. Download/cache OHLCV data for the tickers defined in `Model_8.1`.
