@@ -96,6 +96,12 @@ def parse_args():
         action="store_true",
         help="Update Google Sheets with portfolio values",
     )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=50,
+        help="Number of Optuna trials for grid search",
+    )
     return parser.parse_args()
 
 # ───────── data cache helper ─────────
@@ -193,7 +199,7 @@ def data_prep_and_feature_engineering():
 
 # ───────── Bayesian GRID SEARCH (Optuna) ─────────
 
-def run_grid_search(X_train_sel, y_train):
+def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
     """Run Optuna Bayesian search and print results."""
     precision = make_scorer(precision_score, pos_label=1, zero_division=0)
     cv = TimeSeriesSplit(n_splits=5)
@@ -214,8 +220,9 @@ def run_grid_search(X_train_sel, y_train):
                 tree_method="gpu_hist",
                 gpu_id=0,
                 max_depth=6,
-                n_estimators=200,
-                learning_rate=0.08,
+                n_estimators=trial.suggest_int("xgb_n", 100, 500, 50),
+                learning_rate=trial.suggest_float("xgb_lr", 0.01, 0.3, log=True),
+                subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
                 random_state=42,
                 eval_metric="logloss",
             )
@@ -224,18 +231,31 @@ def run_grid_search(X_train_sel, y_train):
             xgbc = xgb.XGBClassifier(
                 tree_method="hist",
                 max_depth=6,
-                n_estimators=200,
-                learning_rate=0.08,
+                n_estimators=trial.suggest_int("xgb_n", 100, 500, 50),
+                learning_rate=trial.suggest_float("xgb_lr", 0.01, 0.3, log=True),
+                subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
                 random_state=42,
                 eval_metric="logloss",
             )
 
         # ------- LightGBM CPU/GPU fallback -------
         try:
-            lgbc = lgbm.LGBMClassifier(device_type="gpu", n_estimators=200, random_state=42)
+            lgbc = lgbm.LGBMClassifier(
+                device_type="gpu",
+                n_estimators=trial.suggest_int("lgb_n", 100, 500, 50),
+                learning_rate=trial.suggest_float("lgb_lr", 0.01, 0.3, log=True),
+                subsample=trial.suggest_float("lgb_subsample", 0.5, 1.0),
+                random_state=42,
+            )
             lgbc.fit(np.zeros((10, X_train_sel.shape[1])), np.zeros(10))
         except Exception:
-            lgbc = lgbm.LGBMClassifier(device_type="cpu", n_estimators=200, random_state=42)
+            lgbc = lgbm.LGBMClassifier(
+                device_type="cpu",
+                n_estimators=trial.suggest_int("lgb_n", 100, 500, 50),
+                learning_rate=trial.suggest_float("lgb_lr", 0.01, 0.3, log=True),
+                subsample=trial.suggest_float("lgb_subsample", 0.5, 1.0),
+                random_state=42,
+            )
 
         vote = VotingClassifier([("rf", rf), ("xgb", xgbc), ("lgb", lgbc)], voting="soft", n_jobs=-1)
         try:
@@ -245,9 +265,9 @@ def run_grid_search(X_train_sel, y_train):
             score = 0.0
         return score
 
-    print("⏳  Running Optuna grid search (10 trials, CPU/GPU‑safe) …")
+    print(f"⏳  Running Optuna grid search ({n_trials} trials, CPU/GPU‑safe) …")
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=10, timeout=600)
+    study.optimize(objective, n_trials=n_trials, timeout=600)
 
     results = study.trials_dataframe().sort_values("value", ascending=False)
     print("\n===== GridSearch Results (sorted by precision) =====")
@@ -469,7 +489,7 @@ def main():
 
     if args.grid_search or run_all:
         X_train_sel, y_train = data_prep_and_feature_engineering()
-        run_grid_search(X_train_sel, y_train)
+        run_grid_search(X_train_sel, y_train, args.n_trials)
 
     if args.backtest or run_all:
         run_backtest()
