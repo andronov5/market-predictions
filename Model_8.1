@@ -290,6 +290,7 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
                 subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
                 random_state=42,
                 eval_metric="logloss",
+                early_stopping_rounds=20,
             )
         except xgb.core.XGBoostError:
             xgbc = xgb.XGBClassifier(
@@ -300,13 +301,13 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
                 subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
                 random_state=42,
                 eval_metric="logloss",
+                early_stopping_rounds=20,
             )
 
         xgbc.fit(
             X_tr,
             y_tr,
             eval_set=[(X_val, y_val)],
-            early_stopping_rounds=20,
             verbose=False,
         )
 
@@ -332,8 +333,7 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
             X_tr,
             y_tr,
             eval_set=[(X_val, y_val)],
-            early_stopping_rounds=20,
-            verbose=False,
+            callbacks=[lgbm.early_stopping(20)],
         )
 
         vote = VotingClassifier([("rf", rf), ("xgb", xgbc), ("lgb", lgbc)], voting="soft", n_jobs=-1)
