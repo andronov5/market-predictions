@@ -71,7 +71,7 @@ def test_compute_features_basic():
     })
     market = {'SPY': close, '^VIX': pd.Series(10.0, index=dates)}
 
-    result = model.compute_features(df, market)
+    result = model.compute_features(df, market, 5, 0.02)
     # 50‑day indicators drop the first 49 rows
     assert len(result) == len(dates) - 49
     for col in model.FEATURES + ['Target']:
