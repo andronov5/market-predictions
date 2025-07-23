@@ -60,8 +60,8 @@ def load_model():
 
 def test_compute_features_basic():
     model = load_model()
-    dates = pd.date_range('2020-01-01', periods=70, freq='D')
-    close = pd.Series(np.linspace(100, 169, len(dates)), index=dates)
+    dates = pd.date_range('2020-01-01', periods=250, freq='D')
+    close = pd.Series(np.linspace(100, 349, len(dates)), index=dates)
     df = pd.DataFrame({
         'Open': close - 1,
         'High': close + 1,
@@ -72,8 +72,8 @@ def test_compute_features_basic():
     market = {'SPY': close, '^VIX': pd.Series(10.0, index=dates)}
 
     result = model.compute_features(df, market, 5, 0.02)
-    # 50‑day indicators drop the first 49 rows
-    assert len(result) == len(dates) - 49
+    # Longest window (200‑day SMA) drops the first 199 rows
+    assert len(result) == len(dates) - 199
     for col in model.FEATURES + ['Target']:
         assert col in result.columns
     assert not result.isna().any().any()
