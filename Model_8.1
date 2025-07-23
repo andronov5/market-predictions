@@ -52,9 +52,33 @@ END_DATE = dt.date.today()
 START_DATE = END_DATE - dt.timedelta(days=YEARS*365)
 
 FEATURES = [
-    "RSI","MACD","MACD_SIGNAL","SMA_10","SMA_50","EMA_10","EMA_50","SMA_ratio","MFI","ATR",
-    "BOLL_HBAND","BOLL_LBAND","BOLL_WIDTH","Return_1d","Return_5d","Return_10d","Return_20d",
-    "Volatility_10d","Volatility_20d","SPY_Trend","VIX_Level","VIX_Change","RS_Market"
+    "RSI",
+    "MACD",
+    "MACD_SIGNAL",
+    "SMA_10",
+    "SMA_50",
+    "EMA_10",
+    "EMA_50",
+    "SMA_ratio",
+    "MFI",
+    "ATR",
+    "BOLL_HBAND",
+    "BOLL_LBAND",
+    "BOLL_WIDTH",
+    "Return_1d",
+    "Return_5d",
+    "Return_10d",
+    "Return_20d",
+    "Volatility_10d",
+    "Volatility_20d",
+    "SPY_Trend",
+    "VIX_Level",
+    "VIX_Change",
+    "RS_Market",
+    "OBV",
+    "SMA_200",
+    "Close_SMA_200",
+    "Price_Pctl_90",
 ]
 N_JOBS = -1
 
@@ -171,6 +195,12 @@ def compute_features(
     df["BOLL_HBAND"] = bb.bollinger_hband()
     df["BOLL_LBAND"] = bb.bollinger_lband()
     df["BOLL_WIDTH"] = (df["BOLL_HBAND"] - df["BOLL_LBAND"]) / df["Close"]
+    df["OBV"] = ta.volume.on_balance_volume(df["Close"], df["Volume"])
+    df["SMA_200"] = ta.trend.sma_indicator(df["Close"], 200)
+    df["Close_SMA_200"] = df["Close"] / df["SMA_200"]
+    df["Price_Pctl_90"] = df["Close"].rolling(90).apply(
+        lambda x: pd.Series(x).rank(pct=True).iloc[-1]
+    )
     for w in (1,5,10,20):
         df[f"Return_{w}d"] = df["Close"].pct_change(w)
     df["Volatility_10d"] = df["Close"].pct_change().rolling(10).std()
