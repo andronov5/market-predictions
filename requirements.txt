@@ -1,0 +1,17 @@
+backoff
+gspread
+google-auth
+google-auth-httplib2
+joblib
+lightgbm
+matplotlib
+numpy
+optuna
+pandas
+scikit-learn
+ta
+vectorbt
+xgboost
+yfinance
+plotly
+kaleido
