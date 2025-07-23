@@ -9,12 +9,10 @@ This repository contains an experiment pipeline centred around `Model_8.1`. The 
 3. (Optional) create and activate a virtual environment.
 4. Install the required packages:
    ```bash
-   pip install optuna vectorbt gspread google-auth google-auth-httplib2 backoff \
-       joblib lightgbm matplotlib numpy pandas scikit-learn ta xgboost yfinance \
-       plotly kaleido
+   pip install -r requirements.txt
    ```
 5. For Google Sheets integration, set the environment variable
-   `GOOGLE_APPLICATION_CREDENTIALS` to your service‑account JSON credentials.
+    `GOOGLE_APPLICATION_CREDENTIALS` to your service‑account JSON credentials.
 
 ## Example usage
 
@@ -43,3 +41,11 @@ The script will:
    are configured).
 
 Grid‑search results are saved to `grid_search_results.parquet` for later inspection.
+
+## Running tests
+
+Install the dependencies as shown above, then run the unit tests with:
+
+```bash
+pytest
+```
