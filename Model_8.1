@@ -280,36 +280,31 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
         )
 
         # ------- XGB CPU/GPU fallback -------
+        params = dict(
+            max_depth=6,
+            n_estimators=trial.suggest_int("xgb_n", 100, 500, 50),
+            learning_rate=trial.suggest_float("xgb_lr", 0.01, 0.3, log=True),
+            subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
+            random_state=42,
+            eval_metric="logloss",
+            early_stopping_rounds=20,
+        )
         try:
-            xgbc = xgb.XGBClassifier(
-                tree_method="gpu_hist",
-                gpu_id=0,
-                max_depth=6,
-                n_estimators=trial.suggest_int("xgb_n", 100, 500, 50),
-                learning_rate=trial.suggest_float("xgb_lr", 0.01, 0.3, log=True),
-                subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
-                random_state=42,
-                eval_metric="logloss",
-                early_stopping_rounds=20,
+            xgbc = xgb.XGBClassifier(tree_method="gpu_hist", gpu_id=0, **params)
+            xgbc.fit(
+                X_tr,
+                y_tr,
+                eval_set=[(X_val, y_val)],
+                verbose=False,
             )
         except xgb.core.XGBoostError:
-            xgbc = xgb.XGBClassifier(
-                tree_method="hist",
-                max_depth=6,
-                n_estimators=trial.suggest_int("xgb_n", 100, 500, 50),
-                learning_rate=trial.suggest_float("xgb_lr", 0.01, 0.3, log=True),
-                subsample=trial.suggest_float("xgb_subsample", 0.5, 1.0),
-                random_state=42,
-                eval_metric="logloss",
-                early_stopping_rounds=20,
+            xgbc = xgb.XGBClassifier(tree_method="hist", **params)
+            xgbc.fit(
+                X_tr,
+                y_tr,
+                eval_set=[(X_val, y_val)],
+                verbose=False,
             )
-
-        xgbc.fit(
-            X_tr,
-            y_tr,
-            eval_set=[(X_val, y_val)],
-            verbose=False,
-        )
 
         # ------- LightGBM CPU/GPU fallback -------
         try:
