@@ -383,6 +383,10 @@ MAX_CONCURRENT = 5
 def run_backtest():
     """Run the vectorbt backtest and export results."""
     print("📂  Loading artefacts …")
+    if not ARTEFACT_FILE.exists():
+        raise FileNotFoundError(
+            f"{ARTEFACT_FILE} not found. Run the training pipeline to create it"
+        )
     art = joblib.load(ARTEFACT_FILE)
     df_bt = art["bt_data"]
 
