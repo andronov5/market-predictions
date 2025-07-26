@@ -371,7 +371,7 @@ pip install vectorbt pandas numpy matplotlib joblib plotly kaleido
 Vectorbt uses Numba under‑the‑hood; if you have a CUDA GPU and numba‑cuda, it will JIT on GPU.
 """
 
-ARTEFACT_FILE = Path("ml_pipeline.joblib")  # created by kernel 1
+ARTEFACT_FILE = Path(__file__).with_name("ml_pipeline.joblib")  # created by kernel 1
 INIT_CASH = 100_000
 MAX_POS_PCT = 0.10          # 10 % of NAV per trade
 STOP_LOSS_PCT = 0.05        # hard stop
