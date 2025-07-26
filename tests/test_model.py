@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import json
+import pytest
 
 
 def load_model():
@@ -16,7 +17,8 @@ def load_model():
         'backoff', 'gspread', 'google', 'google.auth', 'joblib', 'lightgbm',
         'matplotlib', 'matplotlib.pyplot', 'optuna', 'vectorbt', 'xgboost',
         'yfinance', 'sklearn', 'sklearn.ensemble', 'sklearn.metrics',
-        'sklearn.model_selection'
+        'sklearn.model_selection', 'ta', 'ta.momentum', 'ta.trend',
+        'ta.volatility', 'ta.volume'
     ]
     for name in modules:
         if name not in sys.modules:
@@ -50,6 +52,38 @@ def load_model():
     sk_ms = sys.modules['sklearn.model_selection']
     sk_ms.TimeSeriesSplit = object
     sk_ms.cross_val_score = lambda *a, **k: [0]
+    # ta library stubs
+    ta = sys.modules.setdefault('ta', types.ModuleType('ta'))
+    ta.momentum = types.ModuleType('ta.momentum')
+    ta.trend = types.ModuleType('ta.trend')
+    ta.volatility = types.ModuleType('ta.volatility')
+    ta.volume = types.ModuleType('ta.volume')
+    sys.modules['ta.momentum'] = ta.momentum
+    sys.modules['ta.trend'] = ta.trend
+    sys.modules['ta.volatility'] = ta.volatility
+    sys.modules['ta.volume'] = ta.volume
+    ta.momentum.rsi = lambda s, n=14: pd.Series(50, index=s.index)
+    ta.trend.macd = lambda s, slow, fast: pd.Series(0, index=s.index)
+    ta.trend.macd_signal = lambda s, slow, fast, signal: pd.Series(0, index=s.index)
+    ta.trend.sma_indicator = lambda s, n: s.rolling(n).mean()
+    ta.trend.ema_indicator = lambda s, n: s.ewm(span=n, adjust=False).mean()
+    ta.volume.money_flow_index = lambda h, l, c, v, n: pd.Series(0, index=c.index)
+    ta.volume.on_balance_volume = lambda c, v: v.cumsum()
+    class DummyBB:
+        def __init__(self, close, window, n):
+            self.close = close
+            self.window = window
+            self.n = n
+        def bollinger_hband(self):
+            m = self.close.rolling(self.window).mean()
+            s = self.close.rolling(self.window).std()
+            return m + self.n * s
+        def bollinger_lband(self):
+            m = self.close.rolling(self.window).mean()
+            s = self.close.rolling(self.window).std()
+            return m - self.n * s
+    ta.volatility.average_true_range = lambda h, l, c, n: pd.Series(0, index=c.index)
+    ta.volatility.BollingerBands = DummyBB
     # load module
     loader = importlib.machinery.SourceFileLoader('model', str(path))
     spec = importlib.util.spec_from_loader('model', loader)
@@ -132,3 +166,11 @@ def test_update_equity_tracker_appends(monkeypatch, tmp_path):
         ['2020-01-09', '102.00', '2.00', '2.00'],
         ['2020-01-10', '105.00', '3.00', '5.00'],
     ]
+
+
+def test_run_backtest_missing_file(tmp_path, monkeypatch):
+    model = load_model()
+    missing = tmp_path / 'ml_pipeline.joblib'
+    monkeypatch.setattr(model, 'ARTEFACT_FILE', missing)
+    with pytest.raises(FileNotFoundError):
+        model.run_backtest()
