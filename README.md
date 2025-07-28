@@ -19,13 +19,19 @@ This repository contains an experiment pipeline centred around `Model_8.1`. The 
 Run the full pipeline with:
 
 ```bash
-python Model_8.1
+python model_8_1.py
+```
+
+Alternatively you can run it as a module:
+
+```bash
+python -m model_8_1
 ```
 
 You can also run individual steps using command line flags. Example:
 
 ```bash
-python Model_8.1 --grid-search --backtest --tickers AAPL,MSFT --start 2020-01-01 --end 2023-01-01
+python model_8_1.py --grid-search --backtest --tickers AAPL,MSFT --start 2020-01-01 --end 2023-01-01
 ```
 
 If no step flags are provided, all steps run by default.
