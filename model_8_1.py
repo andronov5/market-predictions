@@ -1,9 +1,17 @@
 """Model 8.1 command line interface."""
+import sys
+from pathlib import Path
 import argparse
 import datetime as dt
 import json
-from pathlib import Path
 from typing import List
+
+try:
+    repo_root = Path(__file__).resolve().parent
+except NameError:
+    repo_root = Path.cwd()
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 import backoff
 import gspread
