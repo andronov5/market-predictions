@@ -11,7 +11,9 @@ import pytest
 
 
 def load_model():
-    path = Path(__file__).resolve().parents[1] / 'Model_8.1'
+    path = Path(__file__).resolve().parents[1] / 'model_8_1.py'
+    if str(path.parent) not in sys.path:
+        sys.path.insert(0, str(path.parent))
     # stub heavy dependencies if missing
     modules = [
         'backoff', 'gspread', 'google', 'google.auth', 'joblib', 'lightgbm',
@@ -101,8 +103,8 @@ def load_model():
     )
     ta.volatility.BollingerBands = DummyBB
     # load module
-    loader = importlib.machinery.SourceFileLoader('model', str(path))
-    spec = importlib.util.spec_from_loader('model', loader)
+    loader = importlib.machinery.SourceFileLoader('model_8_1', str(path))
+    spec = importlib.util.spec_from_loader('model_8_1', loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     return module
