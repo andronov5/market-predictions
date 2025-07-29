@@ -32,3 +32,4 @@ dist/
 .vscode/
 
 ".venv312/"  
+".venv*/"  
