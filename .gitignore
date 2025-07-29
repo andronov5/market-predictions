@@ -37,3 +37,7 @@ dist/
 # Data files
 *.parquet
 *.joblib
+
+# Unwanted files
+Example
+desktop.ini
