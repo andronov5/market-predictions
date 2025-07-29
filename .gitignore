@@ -33,3 +33,7 @@ dist/
 
 ".venv312/"  
 ".venv*/"  
+
+# Data files
+*.parquet
+*.joblib
