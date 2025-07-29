@@ -4,7 +4,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import joblib
 import pandas as pd
-import numpy as np
 import vectorbt as vbt
 
 __all__ = ["run_backtest"]
