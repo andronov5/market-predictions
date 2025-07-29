@@ -41,3 +41,5 @@ dist/
 # Unwanted files
 Example
 desktop.ini
+
+.ipynb_checkpoints/
