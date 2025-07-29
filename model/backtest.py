@@ -4,6 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import joblib
 import pandas as pd
+import numpy as np
 import vectorbt as vbt
 
 __all__ = ["run_backtest"]
@@ -15,6 +16,47 @@ STOP_LOSS_PCT = 0.05
 TRAIL_PCT = 0.03
 TAKE_PROFIT_PCT = 0.08
 MAX_CONCURRENT = 5
+
+
+def _generate_sl_tp(price: pd.DataFrame, entries: pd.DataFrame, *, stop_loss: float, take_profit: float):
+    """Generate stop loss and take profit exits."""
+    exits_sl = pd.DataFrame(False, index=price.index, columns=price.columns)
+    exits_tp = pd.DataFrame(False, index=price.index, columns=price.columns)
+    entry_price = {col: None for col in price.columns}
+    for i in range(len(price)):
+        for col in price.columns:
+            if entries.iloc[i][col] and entry_price[col] is None:
+                entry_price[col] = price.iloc[i][col]
+            if entry_price[col] is not None:
+                p = price.iloc[i][col]
+                if stop_loss is not None and p <= entry_price[col] * (1 - stop_loss):
+                    exits_sl.iloc[i, exits_sl.columns.get_loc(col)] = True
+                    entry_price[col] = None
+                elif take_profit is not None and p >= entry_price[col] * (1 + take_profit):
+                    exits_tp.iloc[i, exits_tp.columns.get_loc(col)] = True
+                    entry_price[col] = None
+    return exits_sl, exits_tp
+
+
+def _generate_trailing(price: pd.DataFrame, entries: pd.DataFrame, *, trail_percent: float):
+    """Generate trailing stop exits."""
+    exits = pd.DataFrame(False, index=price.index, columns=price.columns)
+    entry_price = {col: None for col in price.columns}
+    high_water = {col: None for col in price.columns}
+    for i in range(len(price)):
+        for col in price.columns:
+            if entries.iloc[i][col] and entry_price[col] is None:
+                entry_price[col] = price.iloc[i][col]
+                high_water[col] = price.iloc[i][col]
+            if entry_price[col] is not None:
+                p = price.iloc[i][col]
+                if p > high_water[col]:
+                    high_water[col] = p
+                elif p <= high_water[col] * (1 - trail_percent):
+                    exits.iloc[i, exits.columns.get_loc(col)] = True
+                    entry_price[col] = None
+                    high_water[col] = None
+    return exits
 
 
 def run_backtest(artefact_file: Path):
@@ -38,10 +80,20 @@ def run_backtest(artefact_file: Path):
     exit_after = 10
     exit_timeout = entries_raw.shift(exit_after).fillna(False)
 
-    exits_sl, exits_tp = vbt.tsignals.generate_sl_tp(
-        price_close, entries_raw, stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT
-    )
-    exits_trail = vbt.tsignals.generate_trailing(price_close, entries_raw, trail_percent=TRAIL_PCT)
+    if hasattr(vbt, "tsignals"):
+        exits_sl, exits_tp = vbt.tsignals.generate_sl_tp(
+            price_close, entries_raw, stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT
+        )
+        exits_trail = vbt.tsignals.generate_trailing(
+            price_close, entries_raw, trail_percent=TRAIL_PCT
+        )
+    else:
+        exits_sl, exits_tp = _generate_sl_tp(
+            price_close, entries_raw, stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT
+        )
+        exits_trail = _generate_trailing(
+            price_close, entries_raw, trail_percent=TRAIL_PCT
+        )
     exits_combined = exits_sl | exits_tp | exits_trail | exit_timeout
 
     print("🚀  Running vectorbt portfolio …")
