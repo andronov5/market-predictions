@@ -1,4 +1,4 @@
-# Byte-compiled / optimized / DLL files
+# Byte‑compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -31,8 +31,9 @@ dist/
 .idea/
 .vscode/
 
-".venv312/"  
-".venv*/"  
+# Local artefacts to keep out of Git
+.venv*/
+best_model.joblib
 
 # Data files
 *.parquet
@@ -42,4 +43,6 @@ dist/
 Example
 desktop.ini
 
+# Notebook checkpoints
 .ipynb_checkpoints/
+
