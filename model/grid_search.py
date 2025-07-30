@@ -144,7 +144,12 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
         )
 
     rf.fit(X_train_sel, y_train)
-    xgbc.fit(X_train_sel, y_train)
+    try:
+        xgbc.fit(X_train_sel, y_train)
+    except xgb.core.XGBoostError:
+        print("Falling back to CPU histogram for XGBoost training")
+        xgbc = xgb.XGBClassifier(tree_method="hist", **xgb_params)
+        xgbc.fit(X_train_sel, y_train)
     lgbc.fit(X_train_sel, y_train)
 
     best_model = VotingClassifier([
