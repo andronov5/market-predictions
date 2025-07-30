@@ -28,7 +28,6 @@ STOP_LOSS_PCT = 0.05         # 5 % stop‑loss
 TAKE_PROFIT_PCT = 0.08       # 8 % take‑profit
 TRAIL_PCT = 0.03             # 3 % trailing stop
 EXIT_AFTER = 10              # bars after which we force an exit
-MAX_CONCURRENT = 5           # concurrent positions (position sizing handles this)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
