@@ -8,7 +8,24 @@ __all__ = ["run_grid_search"]
 
 
 def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
-    """Run Optuna Bayesian search and print results."""
+    """Run Optuna Bayesian search and print results.
+
+    Parameters
+    ----------
+    X_train_sel : DataFrame
+        Training feature matrix.
+    y_train : Series
+        Training labels.
+    n_trials : int, optional
+        Number of Optuna trials to run, by default ``50``.
+
+    Returns
+    -------
+    tuple
+        ``(best_params, best_model)`` where ``best_params`` are the hyper
+        parameters from ``study.best_trial`` and ``best_model`` is the
+        fitted :class:`VotingClassifier` using those parameters.
+    """
 
     def objective(trial):
         split = int(len(X_train_sel) * 0.8)
@@ -84,3 +101,57 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
 
     results.to_parquet("grid_search_results.parquet", index=False)
     print("\nGrid search completed. Results saved to grid_search_results.parquet")
+
+    best_params = study.best_trial.params
+
+    rf = RandomForestClassifier(
+        n_estimators=best_params.get("n"),
+        max_depth=best_params.get("d"),
+        min_samples_leaf=best_params.get("leaf"),
+        class_weight="balanced",
+        n_jobs=-1,
+        random_state=42,
+    )
+
+    xgb_params = dict(
+        max_depth=6,
+        n_estimators=best_params.get("xgb_n"),
+        learning_rate=best_params.get("xgb_lr"),
+        subsample=best_params.get("xgb_subsample"),
+        random_state=42,
+        eval_metric="logloss",
+    )
+    try:
+        xgbc = xgb.XGBClassifier(tree_method="gpu_hist", gpu_id=0, **xgb_params)
+    except xgb.core.XGBoostError:
+        xgbc = xgb.XGBClassifier(tree_method="hist", **xgb_params)
+
+    try:
+        lgbc = lgbm.LGBMClassifier(
+            device_type="gpu",
+            n_estimators=best_params.get("lgb_n"),
+            learning_rate=best_params.get("lgb_lr"),
+            subsample=best_params.get("lgb_subsample"),
+            random_state=42,
+        )
+    except Exception:
+        lgbc = lgbm.LGBMClassifier(
+            device_type="cpu",
+            n_estimators=best_params.get("lgb_n"),
+            learning_rate=best_params.get("lgb_lr"),
+            subsample=best_params.get("lgb_subsample"),
+            random_state=42,
+        )
+
+    rf.fit(X_train_sel, y_train)
+    xgbc.fit(X_train_sel, y_train)
+    lgbc.fit(X_train_sel, y_train)
+
+    best_model = VotingClassifier([
+        ("rf", rf),
+        ("xgb", xgbc),
+        ("lgb", lgbc),
+    ], voting="soft", n_jobs=-1)
+    best_model.fit(X_train_sel, y_train)
+
+    return best_params, best_model
