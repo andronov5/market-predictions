@@ -4,6 +4,24 @@ import optuna
 import xgboost as xgb
 import lightgbm as lgbm
 
+
+def _gpu_available() -> bool:
+    """Return ``True`` if either XGBoost or LightGBM can access a GPU."""
+    sample_X = [[0], [1]]
+    sample_y = [0, 1]
+    try:
+        xgb.XGBClassifier(
+            tree_method="gpu_hist", gpu_id=0, n_estimators=1
+        ).fit(sample_X, sample_y)
+        return True
+    except Exception:
+        pass
+    try:
+        lgbm.LGBMClassifier(device_type="gpu", n_estimators=1).fit(sample_X, sample_y)
+        return True
+    except Exception:
+        return False
+
 __all__ = ["run_grid_search"]
 
 
@@ -26,6 +44,8 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
         parameters from ``study.best_trial`` and ``best_model`` is the
         fitted :class:`VotingClassifier` using those parameters.
     """
+
+    gpu = _gpu_available()
 
     def objective(trial):
         split = int(len(X_train_sel) * 0.8)
@@ -50,29 +70,20 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
             eval_metric="logloss",
             early_stopping_rounds=20,
         )
-        try:
-            xgbc = xgb.XGBClassifier(tree_method="gpu_hist", gpu_id=0, **params)
-            xgbc.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
-        except xgb.core.XGBoostError:
-            xgbc = xgb.XGBClassifier(tree_method="hist", **params)
-            xgbc.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+        xgbc = xgb.XGBClassifier(
+            tree_method="gpu_hist" if gpu else "hist",
+            gpu_id=0 if gpu else None,
+            **params,
+        )
+        xgbc.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
 
-        try:
-            lgbc = lgbm.LGBMClassifier(
-                device_type="gpu",
-                n_estimators=trial.suggest_int("lgb_n", 100, 500, 50),
-                learning_rate=trial.suggest_float("lgb_lr", 0.01, 0.3, log=True),
-                subsample=trial.suggest_float("lgb_subsample", 0.5, 1.0),
-                random_state=42,
-            )
-        except Exception:
-            lgbc = lgbm.LGBMClassifier(
-                device_type="cpu",
-                n_estimators=trial.suggest_int("lgb_n", 100, 500, 50),
-                learning_rate=trial.suggest_float("lgb_lr", 0.01, 0.3, log=True),
-                subsample=trial.suggest_float("lgb_subsample", 0.5, 1.0),
-                random_state=42,
-            )
+        lgbc = lgbm.LGBMClassifier(
+            device_type="gpu" if gpu else "cpu",
+            n_estimators=trial.suggest_int("lgb_n", 100, 500, 50),
+            learning_rate=trial.suggest_float("lgb_lr", 0.01, 0.3, log=True),
+            subsample=trial.suggest_float("lgb_subsample", 0.5, 1.0),
+            random_state=42,
+        )
 
         lgbc.fit(
             X_tr,
@@ -121,47 +132,23 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
         random_state=42,
         eval_metric="logloss",
     )
-    try:
-        xgbc = xgb.XGBClassifier(tree_method="gpu_hist", gpu_id=0, **xgb_params)
-    except xgb.core.XGBoostError:
-        xgbc = xgb.XGBClassifier(tree_method="hist", **xgb_params)
+    xgbc = xgb.XGBClassifier(
+        tree_method="gpu_hist" if gpu else "hist",
+        gpu_id=0 if gpu else None,
+        **xgb_params,
+    )
 
-    try:
-        lgbc = lgbm.LGBMClassifier(
-            device_type="gpu",
-            n_estimators=best_params.get("lgb_n"),
-            learning_rate=best_params.get("lgb_lr"),
-            subsample=best_params.get("lgb_subsample"),
-            random_state=42,
-        )
-    except Exception:
-        lgbc = lgbm.LGBMClassifier(
-            device_type="cpu",
-            n_estimators=best_params.get("lgb_n"),
-            learning_rate=best_params.get("lgb_lr"),
-            subsample=best_params.get("lgb_subsample"),
-            random_state=42,
-        )
+    lgbc = lgbm.LGBMClassifier(
+        device_type="gpu" if gpu else "cpu",
+        n_estimators=best_params.get("lgb_n"),
+        learning_rate=best_params.get("lgb_lr"),
+        subsample=best_params.get("lgb_subsample"),
+        random_state=42,
+    )
 
     rf.fit(X_train_sel, y_train)
-    try:
-        xgbc.fit(X_train_sel, y_train)
-    except xgb.core.XGBoostError:
-        print("Falling back to CPU histogram for XGBoost training")
-        xgbc = xgb.XGBClassifier(tree_method="hist", **xgb_params)
-        xgbc.fit(X_train_sel, y_train)
-    try:
-        lgbc.fit(X_train_sel, y_train)
-    except Exception:
-        print("LightGBM GPU training failed, switching to CPU")
-        lgbc = lgbm.LGBMClassifier(
-            device_type="cpu",
-            n_estimators=best_params.get("lgb_n"),
-            learning_rate=best_params.get("lgb_lr"),
-            subsample=best_params.get("lgb_subsample"),
-            random_state=42,
-        )
-        lgbc.fit(X_train_sel, y_train)
+    xgbc.fit(X_train_sel, y_train)
+    lgbc.fit(X_train_sel, y_train)
 
     best_model = VotingClassifier([
         ("rf", rf),
