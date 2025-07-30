@@ -94,3 +94,28 @@ def test_run_grid_search_basic():
     assert isinstance(params, dict)
     assert hasattr(model, "fit")
     assert len((params, model)) == 2
+
+
+def test_run_grid_search_fallback(monkeypatch, capsys):
+    gs = load_grid_search()
+
+    class FailingEstimator:
+        def __init__(self, *a, **k):
+            pass
+
+        def fit(self, *a, **k):
+            raise gs.xgb.core.XGBoostError("boom")
+
+        def predict(self, X):
+            return [0] * len(X)
+
+    monkeypatch.setattr(gs.xgb, "XGBClassifier", FailingEstimator)
+
+    X = pd.DataFrame({"x": [1, 2, 3, 4], "y": [4, 5, 6, 7]})
+    y = pd.Series([0, 1, 0, 1])
+    params, model = gs.run_grid_search(X, y, n_trials=1)
+    out = capsys.readouterr().out
+
+    assert isinstance(params, dict)
+    assert hasattr(model, "fit")
+    assert "falling back" in out.lower()
