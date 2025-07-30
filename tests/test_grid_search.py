@@ -94,4 +94,3 @@ def test_run_grid_search_basic():
     assert isinstance(params, dict)
     assert hasattr(model, "fit")
     assert len((params, model)) == 2
-
