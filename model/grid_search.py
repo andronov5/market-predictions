@@ -150,7 +150,18 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
         print("Falling back to CPU histogram for XGBoost training")
         xgbc = xgb.XGBClassifier(tree_method="hist", **xgb_params)
         xgbc.fit(X_train_sel, y_train)
-    lgbc.fit(X_train_sel, y_train)
+    try:
+        lgbc.fit(X_train_sel, y_train)
+    except Exception:
+        print("LightGBM GPU training failed, switching to CPU")
+        lgbc = lgbm.LGBMClassifier(
+            device_type="cpu",
+            n_estimators=best_params.get("lgb_n"),
+            learning_rate=best_params.get("lgb_lr"),
+            subsample=best_params.get("lgb_subsample"),
+            random_state=42,
+        )
+        lgbc.fit(X_train_sel, y_train)
 
     best_model = VotingClassifier([
         ("rf", rf),
