@@ -147,14 +147,22 @@ def run_grid_search(X_train_sel, y_train, n_trials: int = 50):
     )
 
     rf.fit(X_train_sel, y_train)
-    xgbc.fit(X_train_sel, y_train)
-    lgbc.fit(X_train_sel, y_train)
 
-    best_model = VotingClassifier([
-        ("rf", rf),
-        ("xgb", xgbc),
-        ("lgb", lgbc),
-    ], voting="soft", n_jobs=-1)
+    trained_estimators = [("rf", rf)]
+
+    try:
+        xgbc.fit(X_train_sel, y_train)
+        trained_estimators.append(("xgb", xgbc))
+    except xgb.core.XGBoostError as e:
+        print(f"XGBoost failed due to {e}; falling back to CPU-only model")
+
+    try:
+        lgbc.fit(X_train_sel, y_train)
+        trained_estimators.append(("lgb", lgbc))
+    except Exception as e:
+        print(f"LightGBM failed due to {e}; falling back to CPU-only model")
+
+    best_model = VotingClassifier(trained_estimators, voting="soft", n_jobs=-1)
     best_model.fit(X_train_sel, y_train)
 
     return best_params, best_model
