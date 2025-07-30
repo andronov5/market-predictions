@@ -14,7 +14,6 @@ from pathlib import Path
 
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
@@ -188,5 +187,3 @@ def run_backtest(artefact_file: Path) -> vbt.Portfolio:
     print("📊  Saved: results/portfolio_values.json & results/backtest_results.png")
 
     return pf
-
-

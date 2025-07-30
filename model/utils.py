@@ -2,6 +2,7 @@ import pandas as pd
 
 __all__ = ["get_max_profit"]
 
+
 def get_max_profit(prices: pd.Series) -> float:
     """Return max profit from single buy/sell transaction."""
     if prices.empty:

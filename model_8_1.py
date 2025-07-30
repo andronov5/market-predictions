@@ -17,9 +17,8 @@ import backoff
 import gspread
 from google.auth import default as gauth_default
 
-from model import (
-    download_or_load_prices,
-    compute_features,
+from model import (  # noqa: F401
+    compute_features,  # noqa: F401
     data_prep_and_feature_engineering,
     run_grid_search,
     run_backtest as _run_backtest,
@@ -28,23 +27,24 @@ from model import (
 # ---------------------------- CONFIG ------------------------------------
 CACHE_FILE = Path("prices_5y.parquet")
 TICKERS = [
-    "AAPL","MSFT","TSLA","GOOGL","AMZN","NVDA","META","NFLX","AMD","BABA",
-    "V","JPM","BAC","KO","DIS","XOM","CVX","INTC","IBM","ORCL",
+    "AAPL", "MSFT", "TSLA", "GOOGL", "AMZN", "NVDA", "META", "NFLX", "AMD", "BABA",
+    "V", "JPM", "BAC", "KO", "DIS", "XOM", "CVX", "INTC", "IBM", "ORCL",
 ]
 YEARS = 5
 END_DATE = dt.date.today()
 START_DATE = END_DATE - dt.timedelta(days=YEARS * 365)
 
 FEATURES = [
-    "RSI","MACD","MACD_SIGNAL","SMA_10","SMA_50","EMA_10","EMA_50","SMA_ratio",
-    "MFI","ATR","BOLL_HBAND","BOLL_LBAND","BOLL_WIDTH","Return_1d","Return_5d",
-    "Return_10d","Return_20d","Volatility_10d","Volatility_20d","SPY_Trend",
-    "VIX_Level","VIX_Change","RS_Market","OBV","SMA_200","Close_SMA_200",
+    "RSI", "MACD", "MACD_SIGNAL", "SMA_10", "SMA_50", "EMA_10", "EMA_50", "SMA_ratio",
+    "MFI", "ATR", "BOLL_HBAND", "BOLL_LBAND", "BOLL_WIDTH", "Return_1d", "Return_5d",
+    "Return_10d", "Return_20d", "Volatility_10d", "Volatility_20d", "SPY_Trend",
+    "VIX_Level", "VIX_Change", "RS_Market", "OBV", "SMA_200", "Close_SMA_200",
     "Price_Pctl_90",
 ]
 N_JOBS = -1
 
 # --------------------------- ARGPARSE -----------------------------------
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run Model 8.1 pipeline steps")
@@ -70,6 +70,7 @@ def parse_args():
     )
     args, _ = parser.parse_known_args()
     return args
+
 
 # --------------------------- GOOGLE SHEETS -------------------------------
 SPREADSHEET_NAME = "TradingLog"
@@ -135,7 +136,7 @@ def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
     init_equity = values[0]
     prev_equity = init_equity if start_idx <= 1 else float(ws.cell(start_idx, 2).value)
 
-    for i, val in enumerate(values[start_idx - 1 :], start=start_idx - 1):
+    for i, val in enumerate(values[start_idx - 1:], start=start_idx - 1):
         date = (dt.date.today() - dt.timedelta(days=len(values) - 1 - i)).isoformat()
         daily_pnl = val - prev_equity
         cum_pnl = val - init_equity
@@ -144,7 +145,7 @@ def update_equity_tracker(json_path: Path = PORTFOLIO_FILE):
 
     if rows:
         for j in range(0, len(rows), 500):
-            _append_rows(ws, rows[j : j + 500])
+            _append_rows(ws, rows[j:j + 500])
         print(f"✔ Added {len(rows)} equity rows (through {rows[-1][0]}).")
     else:
         print("ℹ Equity sheet already up‑to‑date.")

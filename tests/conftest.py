@@ -22,6 +22,7 @@ def pytest_configure(config):
     sk_metrics.precision_score = lambda *a, **k: 0
 
     ta_vol = sys.modules['ta.volatility']
+
     class DummyBB:
         def __init__(self, close, window, n):
             self.close = close
@@ -39,5 +40,3 @@ def pytest_configure(config):
             return m - self.n * s
 
     ta_vol.BollingerBands = DummyBB
-
-
